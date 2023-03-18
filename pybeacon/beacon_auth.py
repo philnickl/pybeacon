@@ -60,7 +60,8 @@ def _do_login(username, password, beacon_url):
             # Finally perform OAuth callback
             # response = session.post(oauthRedirectUrl, data)
 
-            return session.post(oauthRedirectUrl, data)
+            # Also return session to allow proper frontend cookie manipulation (e.g. for changing current HQ)
+            return [session, session.post(oauthRedirectUrl, data)]
 
         else:
             raise requests.exceptions.RequestException
@@ -72,6 +73,11 @@ def _do_login(username, password, beacon_url):
 def get_api_token(username, password, beacon_url='https://beacon.ses.nsw.gov.au'):
     response = _do_login(username, password, beacon_url)
 
+    if len(response) != 2:
+        raise requests.exceptions.RequestException
+
+    response = response[1]
+
     bearer_token = {
         'accessToken': response.html.search('self.accessToken = \'{}\'')[0],
         'expiresAt': response.html.search('self.expiresAt = \'{}\'')[0]
@@ -82,6 +88,32 @@ def get_api_token(username, password, beacon_url='https://beacon.ses.nsw.gov.au'
 def get_frontend_cookies(username, password, beacon_url='https://beacon.ses.nsw.gov.au'):
     response = _do_login(username, password, beacon_url)
 
-    # Can be loaded into a new session with `session.cookies.update(pickle.load(cookies))`
+    if len(response) != 2:
+        raise requests.exceptions.RequestException
+
+    response = response[1]
+
+    # Can be loaded into a new session with `session.cookies.update(pickle.loads(cookies))`
     cookies = pickle.dumps(response.cookies)
     return cookies
+
+def change_current_hq(hq: int, username, password, beacon_url='https://beaocn.ses.nsw.gov.au'):
+    response = _do_login(username, password, beacon_url)
+
+    if len(response) != 2:
+        raise requests.exceptions.RequestException
+
+    response = response[1]
+    session = response[0]
+
+    res = session.post(
+            f"{beacon_url}/Account/SetCurrentHq",
+            data={"entityId": hq},
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+    bearer_token = {
+        'accessToken': res.html.search('self.accessToken = \'{}\'')[0],
+        'expiresAt': res.html.search('self.expiresAt = \'{}\'')[0]
+    }
+    return bearer_token
